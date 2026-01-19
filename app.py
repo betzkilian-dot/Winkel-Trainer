@@ -5,7 +5,7 @@ import matplotlib.patches as patches
 import numpy as np
 
 # Versionskonfiguration
-VERSION = "1.5.1"
+VERSION = "1.5.2"
 AUTHOR = "Kilian Betz"
 
 st.set_page_config(page_title=f"Winkel-Trainer v{VERSION}", layout="wide")
@@ -34,33 +34,26 @@ if 'current_task' not in st.session_state: st.session_state.current_task = None
 if 'feedback' not in st.session_state: st.session_state.feedback = None
 
 def generate_task():
-    # Geometrie-Grundlagen
-    p_angle = 0 # Wir fixieren die Parallelen horizontal für bessere Übersicht im Dreiecksmodus
-    t_angle = random.randint(40, 70)
-    s_angle = 180 - random.randint(40, 70)
-    
     mode = st.session_state.mode
     
     if mode == "Innenwinkelsumme":
-        # Wir geben zwei Winkel an der unteren Parallele h (Index 2)
-        # und suchen den Winkel an der Spitze (Schnittpunkt t und s)
-        given1_pos = 'a2' # Winkel an t / h
-        given2_pos = 'b4' # Winkel an s / h (Index 4 für s-Kreuzung)
-        target_pos = 'top'
+        # Dreiecks-Modus: t und s müssen unterschiedliche Winkel haben
+        t_angle = random.randint(35, 65)
+        s_angle = random.randint(115, 145)
         
-        # Berechnungen
+        # Gegebene Winkel an der unteren Parallele h
         val1 = t_angle
         val2 = 180 - s_angle
-        # Innenwinkel im Dreieck oben ist 180 - t_angle - (180 - s_angle) = s_angle - t_angle
-        correct = 180 - (t_angle + (180 - s_angle))
+        # Ziel: Innenwinkelsumme 180 - (t_angle + (180-s_angle))
+        correct = 180 - (val1 + val2)
         
         st.session_state.current_task = {
             'p_angle': 0, 't_angle': t_angle, 's_angle': s_angle,
             'mode': "triangle",
-            'given1_pos': given1_pos, 'given1_val': val1, 'given1_ui': UI_SYMBOLS[given1_pos], 'given1_plot': PLOT_SYMBOLS[given_1_pos] if 'given_1_pos' in locals() else PLOT_SYMBOLS[given1_pos],
-            'given2_pos': given2_pos, 'given2_val': val2, 'given2_ui': UI_SYMBOLS[given2_pos], 'given2_plot': PLOT_SYMBOLS[given2_pos],
-            'target_pos': target_pos, 'target_ui': UI_SYMBOLS[target_pos], 'target_plot': PLOT_SYMBOLS[target_pos],
-            'correct_answer': correct
+            'given1_pos': 'a2', 'given1_val': val1, 'given1_ui': UI_SYMBOLS['a2'], 'given1_plot': PLOT_SYMBOLS['a2'],
+            'given2_pos': 'b4', 'given2_val': val2, 'given2_ui': UI_SYMBOLS['b2'], 'given2_plot': PLOT_SYMBOLS['b2'],
+            'target_pos': 'top', 'target_ui': UI_SYMBOLS['top'], 'target_plot': PLOT_SYMBOLS['top'],
+            'correct_answer': int(correct)
         }
     else:
         # Normaler Modus
@@ -69,15 +62,15 @@ def generate_task():
         target_pos = random.choice(['a2','b2','c2','d2'])
         inter = t_ang if t_ang <= 90 else 180 - t_ang
         
-        def calc(p, base): return base if p[0] in ['a','c'] else 180-base
+        def calc_v(p, base): return base if p[0] in ['a','c'] else 180-base
         
         st.session_state.current_task = {
             'p_angle': 0, 't_angle': t_ang, 's_angle': t_ang,
             'mode': "normal",
-            'given1_pos': given_pos, 'given1_val': calc(given_pos, inter), 'given1_ui': UI_SYMBOLS[given_pos], 'given1_plot': PLOT_SYMBOLS[given_pos],
+            'given1_pos': given_pos, 'given1_val': calc_v(given_pos, inter), 'given1_ui': UI_SYMBOLS[given_pos], 'given1_plot': PLOT_SYMBOLS[given_pos],
             'given2_pos': None,
             'target_pos': target_pos, 'target_ui': UI_SYMBOLS[target_pos], 'target_plot': PLOT_SYMBOLS[target_pos],
-            'correct_answer': calc(target_pos, inter)
+            'correct_answer': int(calc_v(target_pos, inter))
         }
     st.session_state.feedback = None
 
@@ -91,7 +84,7 @@ def create_plot(task, width):
     ax.set_aspect('equal'); ax.axis('off')
     fig.patch.set_facecolor('white')
 
-    def draw_line(ang, dist, col='black', lbl=''):
+    def draw_l(ang, dist, col='black', lbl=''):
         r = np.radians(ang)
         dx, dy = np.cos(r), np.sin(r)
         nx, ny = -np.sin(r), np.cos(r)
@@ -99,32 +92,38 @@ def create_plot(task, width):
         ax.plot([cx-10*dx, cx+10*dx], [cy-10*dy, cy+10*dy], color=col, lw=2.5)
         if lbl: ax.text(cx+4.2*dx, cy+4.2*dy+0.2, lbl, fontsize=14, fontstyle='italic', color=col)
 
-    draw_line(0, 1.5, lbl='g')
-    draw_line(0, -1.5, lbl='h')
-    draw_line(task['t_angle'], 0, col='#FF3B30', lbl='t')
-    
-    if task['mode'] == "triangle":
-        draw_line(task['s_angle'], -0.5, col='orange', lbl='s')
-
-    def intersect(a1, d1, a2, d2):
+    def intersect_safe(a1, d1, a2, d2):
+        # Sicherheitscheck gegen Division durch Null (parallele Linien)
+        if abs(a1 % 180 - a2 % 180) < 0.1: return np.array([0,0])
         r1, r2 = np.radians(a1), np.radians(a2)
         A = np.array([[-np.sin(r1), np.cos(r1)], [-np.sin(r2), np.cos(r2)]])
         b = np.array([d1, d2])
         return np.linalg.solve(A, b)
 
-    pts = {
-        '1': intersect(0, 1.5, task['t_angle'], 0),
-        '2': intersect(0, -1.5, task['t_angle'], 0),
-        '3': intersect(0, 1.5, task['s_angle'], -0.5),
-        '4': intersect(0, -1.5, task['s_angle'], -0.5),
-        'top': intersect(task['t_angle'], 0, task['s_angle'], -0.5)
-    }
+    # Zeichnen
+    draw_l(0, 1.5, lbl='g')
+    draw_l(0, -1.5, lbl='h')
+    draw_l(task['t_angle'], 0, col='#FF3B30', lbl='t')
+    
+    if task['mode'] == "triangle":
+        draw_l(task['s_angle'], -0.5, col='orange', lbl='s')
 
-    def draw_w(pos, val_plot, is_target):
-        center = pts[pos] if pos == 'top' else pts[pos[1:]]
+    # Punkte berechnen
+    pts = {
+        '1': intersect_safe(0, 1.5, task['t_angle'], 0),
+        '2': intersect_safe(0, -1.5, task['t_angle'], 0)
+    }
+    if task['mode'] == "triangle":
+        pts['3'] = intersect_safe(0, 1.5, task['s_angle'], -0.5)
+        pts['4'] = intersect_safe(0, -1.5, task['s_angle'], -0.5)
+        pts['top'] = intersect_safe(task['t_angle'], 0, task['s_angle'], -0.5)
+
+    def draw_wedge(pos, val_plot, is_target):
+        if pos == 'top': center = pts['top']
+        else: center = pts[pos[1:]]
+        
         color = '#FF3B30' if is_target else '#007AFF'
         
-        # Vereinfachte Winkelberechnung für Wedge
         if pos == 'top':
             s, e = task['s_angle'], task['t_angle'] + 180
         else:
@@ -141,11 +140,11 @@ def create_plot(task, width):
         ax.text(center[0]+1.2*np.cos(m), center[1]+1.2*np.sin(m), val_plot, 
                 fontsize=18, color=color, fontweight='bold', ha='center', va='center')
 
-    # Einzeichnen
-    draw_w(task['given1_pos'], task['given1_plot'], False)
+    # Markierungen einzeichnen
+    draw_wedge(task['given1_pos'], task['given1_plot'], False)
     if task['given2_pos']:
-        draw_w(task['given2_pos'], task['given2_plot'], False)
-    draw_w(task['target_pos'], task['target_plot'], True)
+        draw_wedge(task['given2_pos'], task['given2_plot'], False)
+    draw_wedge(task['target_pos'], task['target_plot'], True)
     
     return fig
 
@@ -154,9 +153,9 @@ st.title("📐 Winkel-Trainer Profi")
 
 with st.sidebar:
     st.header("Modus")
-    new_mode = st.radio("Schwierigkeit:", ["Normal", "Innenwinkelsumme"])
-    if new_mode != st.session_state.mode:
-        st.session_state.mode = new_mode
+    mode_selection = st.radio("Aufgabentyp:", ["Normal", "Innenwinkelsumme"])
+    if mode_selection != st.session_state.mode:
+        st.session_state.mode = mode_selection
         generate_task(); st.rerun()
     img_w = st.slider("Bildbreite", 4.0, 14.0, 8.0)
     if st.button("Neu würfeln"): generate_task(); st.rerun()
@@ -166,22 +165,22 @@ col1, col2 = st.columns([1.6, 1], gap="large")
 with col1:
     st.pyplot(create_plot(st.session_state.current_task, img_w))
     if st.session_state.mode == "Innenwinkelsumme":
-        st.warning("💡 Info: Nutze Stufenwinkel an g || h und dann die Innenwinkelsumme ($180^\\circ$).")
+        st.info("💡 Nutze Stufenwinkel an g || h und dann die Innenwinkelsumme im Dreieck ($180^\\circ$).")
 
 with col2:
     t = st.session_state.current_task
     st.markdown(f"### Score: `{st.session_state.score}`")
     
-    info_text = f"Gegeben: {t['given1_ui']} = {t['given1_val']}°"
+    txt = f"Gegeben: {t['given1_ui']} = {t['given1_val']}°"
     if t['given2_pos']:
-        info_text += f"  und  {t['given2_ui']} = {t['given2_val']}°"
+        txt += f"  und  {t['given2_ui']} = {t['given2_val']}°"
     
-    st.markdown(f'<div class="given-box">{info_text}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="given-box">{txt}</div>', unsafe_allow_html=True)
     
-    with st.form("input"):
-        val = st.number_input(f"Berechne {t['target_ui']}:", min_value=0, max_value=180, step=1)
+    with st.form("input_form"):
+        u_val = st.number_input(f"Berechne {t['target_ui']}:", min_value=0, max_value=180, step=1)
         if st.form_submit_button("Überprüfen"):
-            if val == t['correct_answer']: st.session_state.feedback = "correct"
+            if u_val == t['correct_answer']: st.session_state.feedback = "correct"
             else: st.session_state.feedback = "wrong"
 
     if st.session_state.feedback == "correct":
@@ -190,6 +189,6 @@ with col2:
             st.session_state.score += 1
             generate_task(); st.rerun()
     elif st.session_state.feedback == "wrong":
-        st.error(f"❌ Falsch. (Tipp: {t['target_ui']} = {t['correct_answer']}°)")
+        st.error(f"❌ Falsch. (Tipp: Ergebnis ist {t['correct_answer']}°)")
 
 st.markdown(f'<div class="footer">{AUTHOR} - Version {VERSION}</div>', unsafe_allow_html=True)
