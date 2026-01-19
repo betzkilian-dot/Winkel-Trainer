@@ -5,7 +5,7 @@ import matplotlib.patches as patches
 import numpy as np
 
 # Versionskonfiguration
-VERSION = "1.4.3"
+VERSION = "1.5.0"
 AUTHOR = "Kilian Betz"
 
 st.set_page_config(page_title=f"Winkel-Trainer v{VERSION}", layout="wide")
@@ -30,47 +30,57 @@ PLOT_SYMBOLS = {'a1':r'$\alpha$','b1':r'$\beta$','c1':r'$\gamma$','d1':r'$\delta
 
 if 'score' not in st.session_state: st.session_state.score = 0
 if 'diff_mode' not in st.session_state: st.session_state.diff_mode = False
+if 'tri_mode' not in st.session_state: st.session_state.tri_mode = False
 if 'current_task' not in st.session_state: st.session_state.current_task = None
 if 'feedback' not in st.session_state: st.session_state.feedback = None
 
 def generate_task():
-    """Generiert eine mathematisch konsistente geometrische Situation."""
-    # 1. Winkel der parallelen Geraden g/h
+    # Basis-Geometrie
     p_angle = random.randint(0, 179)
-    # 2. Winkel der Schneidenden (t)
-    t_angle = (p_angle + random.randint(35, 145)) % 180
-    while abs(p_angle - t_angle) < 25 or abs(p_angle - t_angle) > 155:
-        t_angle = (t_angle + 10) % 180
-
-    mode = "hard" if st.session_state.diff_mode else "normal"
-    s_angle = (t_angle + random.randint(40, 70)) % 180
+    t_angle = (p_angle + random.randint(40, 140)) % 180
     
-    # Kreuzung auswählen
-    if mode == "normal":
-        active_set = ('1', '2')
+    # Spezialmodus: Innenwinkelsumme
+    if st.session_state.tri_mode:
+        # Erzeugt ein Dreieck durch eine zweite Schneidende s
+        s_angle = (t_angle + random.randint(40, 80)) % 180
+        mode = "triangle"
+    elif st.session_state.diff_mode:
+        s_angle = (t_angle + 30) % 180
+        mode = "hard"
     else:
-        active_set = random.choice([('1', '2'), ('3', '4')])
+        s_angle = t_angle
+        mode = "normal"
+
+    # Bestimmung der Kreuzungspunkte (1,2 für t | 3,4 für s)
+    if mode == "triangle":
+        # Im Dreiecksmodus beziehen wir uns auf t, s und die Parallele g
+        # Wir fragen nach einem Winkel im Dreieck
+        active_set = ('1', '3') 
+        # Berechne den Winkel an der Spitze des Dreiecks (Schnittpunkt t und s)
+        tri_top_angle = abs(t_angle - s_angle) % 180
+        if tri_top_angle > 90: tri_top_angle = 180 - tri_top_angle
+    else:
+        active_set = ('1', '2')
+
+    # Geometrie-Werte berechnen
+    inter_t = abs(p_angle - t_angle) % 180
+    if inter_t > 90: inter_t = 180 - inter_t
     
-    # Der relevante Schnittwinkel für die Berechnung
-    line_a = p_angle % 180
-    trans_a = (t_angle if active_set[0] in ['1','2'] else s_angle) % 180
-    sorted_angles = sorted([line_a, trans_a])
-    
-    # inter_angle ist das Maß des ersten Sektors (a und c)
-    inter_angle = sorted_angles[1] - sorted_angles[0]
-    
+    inter_s = abs(p_angle - s_angle) % 180
+    if inter_s > 90: inter_s = 180 - inter_s
+
     given_pos = random.choice(['a', 'b', 'c', 'd']) + active_set[0]
     target_pos = random.choice(['a', 'b', 'c', 'd']) + active_set[1]
 
-    def get_actual_value(pos, base):
-        # Sektor a und c sind 'base' groß, b und d sind die Supplementwinkel
+    def get_val(pos, base_t, base_s):
+        base = base_t if pos[1] in ['1', '2'] else base_s
         return base if pos[0] in ['a', 'c'] else 180 - base
 
     st.session_state.current_task = {
         'p_angle': p_angle, 't_angle': t_angle, 's_angle': s_angle,
         'mode': mode, 'given_pos': given_pos, 'target_pos': target_pos,
-        'given_val': get_actual_value(given_pos, inter_angle),
-        'correct_answer': get_actual_value(target_pos, inter_angle),
+        'given_val': get_val(given_pos, inter_t, inter_s),
+        'correct_answer': get_val(target_pos, inter_t, inter_s),
         'given_ui': UI_SYMBOLS[given_pos], 'target_ui': UI_SYMBOLS[target_pos],
         'given_plot': PLOT_SYMBOLS[given_pos], 'target_plot': PLOT_SYMBOLS[target_pos]
     }
@@ -86,20 +96,28 @@ def create_plot(task, width):
     ax.set_aspect('equal'); ax.axis('off')
     fig.patch.set_facecolor('white')
 
-    def draw_line(angle_deg, dist, color='black', label=''):
+    def draw_line(angle_deg, dist, color='black', label='', style='-'):
         rad = np.radians(angle_deg)
         dx, dy = np.cos(rad), np.sin(rad)
         nx, ny = -np.sin(rad), np.cos(rad)
         cx, cy = nx * dist, ny * dist
-        ax.plot([cx - 10*dx, cx + 10*dx], [cy - 10*dy, cy + 10*dy], color=color, linewidth=2.5)
+        ax.plot([cx - 10*dx, cx + 10*dx], [cy - 10*dy, cy + 10*dy], color=color, linewidth=2.5, linestyle=style)
         if label:
             ax.text(cx + 4.2*dx, cy + 4.2*dy + 0.2, label, fontsize=14, fontstyle='italic', color=color)
 
+    # Parallele Geraden
     draw_line(task['p_angle'], 1.5, label='g')
     draw_line(task['p_angle'], -1.5, label='h')
+    
+    # Schneidende t
     draw_line(task['t_angle'], 0, color='#FF3B30', label='t')
-    if task['mode'] == "hard":
-        draw_line(task['s_angle'], 1.0, color='green', label='s')
+    
+    # Zweite Schneidende s
+    if task['mode'] in ["hard", "triangle"]:
+        s_color = "green" if task['mode'] == "hard" else "orange"
+        # Im Dreiecksmodus muss s so liegen, dass es t schneidet
+        s_dist = 1.0 if task['mode'] == "hard" else -0.5
+        draw_line(task['s_angle'], s_dist, color=s_color, label='s')
 
     def intersect(a1, d1, a2, d2):
         r1, r2 = np.radians(a1), np.radians(a2)
@@ -110,17 +128,16 @@ def create_plot(task, width):
     pts = {
         '1': intersect(task['p_angle'], 1.5, task['t_angle'], 0),
         '2': intersect(task['p_angle'], -1.5, task['t_angle'], 0),
-        '3': intersect(task['p_angle'], 1.5, task['s_angle'], 1.0),
-        '4': intersect(task['p_angle'], -1.5, task['s_angle'], 1.0)
+        '3': intersect(task['p_angle'], 1.5, task['s_angle'], -0.5 if task['mode']=="triangle" else 1.0),
+        '4': intersect(task['p_angle'], -1.5, task['s_angle'], -0.5 if task['mode']=="triangle" else 1.0)
     }
 
     def draw_wedge(pos, is_target):
         center = pts[pos[1]]
         color = '#FF3B30' if is_target else '#007AFF'
-        a1, a2 = task['p_angle'] % 180, (task['t_angle'] if pos[1] in ['1','2'] else task['s_angle']) % 180
+        a1 = task['p_angle'] % 180
+        a2 = (task['t_angle'] if pos[1] in ['1','2'] else task['s_angle']) % 180
         angles = sorted([a1, a2])
-        
-        # Sektor-Definition passend zur calc_val Logik
         q = pos[0]
         if q == 'a': s, e = angles[0], angles[1]
         elif q == 'b': s, e = angles[1], angles[0] + 180
@@ -138,24 +155,41 @@ def create_plot(task, width):
     return fig
 
 # --- UI ---
-st.title("📐 Winkel-Trainer")
+st.title("📐 Winkel-Trainer Profi")
+
 with st.sidebar:
-    st.header("Einstellungen")
-    if st.toggle("Schwere Aufgaben", value=st.session_state.diff_mode) != st.session_state.diff_mode:
-        st.session_state.diff_mode = not st.session_state.diff_mode
-        generate_task(); st.rerun()
+    st.header("Modus wählen")
+    # Toggles für die Modi
+    if st.toggle("Schwere Aufgaben (4 Geraden)", value=st.session_state.diff_mode):
+        st.session_state.diff_mode = True
+        st.session_state.tri_mode = False
+    else:
+        st.session_state.diff_mode = False
+        
+    if st.toggle("Innenwinkelsumme (Dreieck)", value=st.session_state.tri_mode):
+        st.session_state.tri_mode = True
+        st.session_state.diff_mode = False
+    else:
+        st.session_state.tri_mode = False
+
+    st.divider()
     img_w = st.slider("Bildbreite", 4.0, 14.0, 8.0)
     if st.button("Manuell neu würfeln"): generate_task(); st.rerun()
 
 col1, col2 = st.columns([1.6, 1], gap="large")
+
 with col1:
     st.pyplot(create_plot(st.session_state.current_task, img_w))
-    st.info("Information: Die Geraden g und h sind parallel.")
+    if st.session_state.tri_mode:
+        st.warning("💡 Tipp: Nutze die Innenwinkelsumme im Dreieck ($180^\\circ$) und die Stufen-/Wechselwinkel.")
+    else:
+        st.info("Information: Die Geraden g und h sind parallel.")
 
 with col2:
     t = st.session_state.current_task
     st.markdown(f"### Score: `{st.session_state.score}`")
     st.markdown(f'<div class="given-box">Gegeben: {t["given_ui"]} = {t["given_val"]}°</div>', unsafe_allow_html=True)
+    
     with st.form("input_form"):
         user_val = st.number_input(f"Wie groß ist {t['target_ui']}?", min_value=0, max_value=180, step=1)
         if st.form_submit_button("Überprüfen"):
@@ -168,6 +202,6 @@ with col2:
             st.session_state.score += 1
             generate_task(); st.rerun()
     elif st.session_state.feedback == "wrong":
-        st.error(f"❌ Falsch. Überlege: Ist {t['target_ui']} gleich groß wie {t['given_ui']} oder ergänzen sie sich zu 180°?")
+        st.error("❌ Das ist leider falsch.")
 
 st.markdown(f'<div class="footer">{AUTHOR} - Version {VERSION}</div>', unsafe_allow_html=True)
