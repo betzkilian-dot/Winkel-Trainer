@@ -5,7 +5,7 @@ import matplotlib.patches as patches
 import numpy as np
 
 # Versionskonfiguration
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 AUTHOR = "Kilian Betz"
 
 st.set_page_config(page_title=f"Winkel-Trainer v{VERSION}", layout="wide")
@@ -28,6 +28,8 @@ GRIECHISCHE_WINKEL = {
 
 if 'score' not in st.session_state:
     st.session_state.score = 0
+if 'feedback' not in st.session_state:
+    st.session_state.feedback = None
 if 'current_task' not in st.session_state:
     st.session_state.current_task = None
 
@@ -66,18 +68,16 @@ def create_plot(task):
     # Parallele Geraden g und h
     ax.axhline(y=5, color='black', linewidth=2)
     ax.axhline(y=2, color='black', linewidth=2)
-    ax.text(9.5, 5.2, 'g', fontsize=14, fontitalic=True)
-    ax.text(9.5, 2.2, 'h', fontsize=14, fontitalic=True)
+    ax.text(9.5, 5.2, 'g', fontsize=14, fontstyle='italic')
+    ax.text(9.5, 2.2, 'h', fontsize=14, fontstyle='italic')
 
-    # Schneidende Gerade t (Steigung ca. 1.2)
+    # Schneidende Gerade t
     x = np.linspace(1, 9, 100)
     y = 1.2 * (x - 5) + 3.5 
     ax.plot(x, y, color='red', linewidth=2)
-    ax.text(8.5, 8, 't', color='red', fontsize=14, fontitalic=True)
+    ax.text(8.5, 8, 't', color='red', fontsize=14, fontstyle='italic')
 
-    # Schnittpunkte
-    # g: y=5 -> 5 = 1.2(x-5)+3.5 -> 1.5 = 1.2x - 6 -> 7.5 = 1.2x -> x=6.25
-    # h: y=2 -> 2 = 1.2(x-5)+3.5 -> -1.5 = 1.2x - 6 -> 4.5 = 1.2x -> x=3.75
+    # Schnittpunkte berechnen
     c1 = (6.25, 5)
     c2 = (3.75, 2)
     
@@ -88,63 +88,64 @@ def create_plot(task):
         color = 'red' if is_target else 'blue'
         alpha = 0.2 if is_target else 0.4
         
-        # Quadranten-Logik
+        # Quadranten-Logik (a=oben-rechts, b=oben-links, c=unten-links, d=unten-rechts)
         angles = {
             'a': (0, phi), 'b': (phi, 180), 
             'c': (180, 180+phi), 'd': (180+phi, 360)
         }
         start, end = angles[pos[0]]
         
-        # Winkelbogen
+        # Winkelbogen einzeichnen
         wedge = patches.Wedge(center, 0.8, start, end, color=color, alpha=alpha)
         ax.add_patch(wedge)
         
-        # Beschriftung
+        # Beschriftung (Griechische Buchstaben)
         label = task['target_letter'] if is_target else task['given_letter']
-        # Positionierung des Textes
         mid_angle = np.radians((start + end) / 2)
-        dist = 1.2
+        dist = 1.3
         lx = center[0] + dist * np.cos(mid_angle)
         ly = center[1] + dist * np.sin(mid_angle)
-        ax.text(lx, ly, label, fontsize=16, color=color, fontweight='bold', ha='center', va='center')
+        ax.text(lx, ly, label, fontsize=18, color=color, fontweight='bold', ha='center', va='center')
 
     draw_angle_mark(task['given_pos'], is_target=False)
     draw_angle_mark(task['target_pos'], is_target=True)
 
     return fig
 
-# --- UI ---
+# --- UI Aufbau ---
 st.title("📐 Winkel-Trainer")
+st.caption("Mathe Gymnasium Bayern | 7. Klasse")
 
 col1, col2 = st.columns([1.5, 1], gap="large")
 
 with col1:
+    # Plot anzeigen
     st.pyplot(create_plot(st.session_state.current_task))
     t = st.session_state.current_task
-    st.info(f"Gegeben ist {t['given_letter']} = {t['given_val']}°. Berechne {t['target_letter']}.")
+    st.info(f"Gegeben ist der Winkel **{t['given_letter']} = {t['given_val']}°**. Berechne das Maß von **{t['target_letter']}**.")
 
 with col2:
     st.markdown(f"### Score: `{st.session_state.score} / 10`")
     
-    with st.form("input_form"):
-        user_val = st.number_input(f"Wert für {t['target_letter']}:", min_value=0, max_value=180, step=1)
+    with st.form("input_form", clear_on_submit=False):
+        user_val = st.number_input(f"Ergebnis für {t['target_letter']}:", min_value=0, max_value=180, step=1)
         if st.form_submit_button("Überprüfen"):
             if user_val == t['correct_answer']:
                 st.session_state.feedback = "correct"
-                st.session_state.score += 1
             else:
                 st.session_state.feedback = "wrong"
 
     if st.session_state.feedback == "correct":
         st.success("✅ Richtig!")
         if st.button("Nächste Aufgabe ➔"):
+            st.session_state.score += 1
             generate_task()
             st.rerun()
     elif st.session_state.feedback == "wrong":
-        st.error("❌ Leider falsch. Probiere es noch einmal!")
+        st.error("❌ Leider falsch. Probiere es noch einmal oder prüfe die Winkelart!")
 
     if st.session_state.score >= 10:
         st.balloons()
-        st.success("🎉 Ziel erreicht! Du bist ein Profi.")
+        st.success("🎉 Ziel erreicht! Du bist ein echter Winkel-Profi.")
 
 st.markdown(f'<div class="footer">{AUTHOR} - Version {VERSION}</div>', unsafe_allow_html=True)
